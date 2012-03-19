@@ -1,0 +1,4 @@
+INSTALL
+=======
+run 'make' from ./src directory. In case of success ./bin/crossgen will be
+generated.
