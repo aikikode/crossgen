@@ -1,5 +1,5 @@
 CC=gcc
-OPTIMIZE=-O0
+OPTIMIZE=-g -O0
 
 OBJS= main.o
 
