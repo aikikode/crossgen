@@ -45,14 +45,21 @@ Note: two (0-2)s of 0's and 2's word are different by the crossed letters (see p
 
 Start building the strie for the very first node 0-1 of 0's word.
 
-! General rule:
+! General rules:
+!
 ! When building a strie for node with pair of (i-j) of root word N, for current
-! node (i-j) and all its parents look through word[i] and word[j] children. To
-! look for word[i] children, i should be > N, so if we are under 1-st word
-! branch we won't look for possible pairs of 0 word and etc.
-! Also for each node we have a list of latest pairs for each word that we've
+! node (i-j) and all its parents look through word[i] and word[j] children.
+!
+! To look for word[i] children, i should be > N, so if we are under 4th word
+! branch we won't look for possible pairs of word 3 or 2 and etc.
+!
+! For each node we have a list of latest pairs for each word that we've
 ! already looked through, so we won't start from the every first child again
 ! when looking for possible pair of the same word again.
+!
+! We don't add a child to the current node if the same pair is one of this
+! node's or any of its parent's elder children
+!
 ! When all children for current node are added we go down the first child or to
 ! the brother or to the first parent's existing brother and repeat the
 ! procedure.

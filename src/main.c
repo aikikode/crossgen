@@ -36,7 +36,7 @@
                            * in this example the distance between the words is:
                            * 6 - 1 = 5
                            */
-#define DEBUG       1
+#define DEBUG       0
 
 struct strie_pair {
     int   crossed_word[2];
@@ -44,6 +44,7 @@ struct strie_pair {
     int   word_orient[2];   // 1 - horisontal; -1 - vertical
     int   word_coord[2][2]; // coordinates of the beginning of the word
     int   procreator;       // the number of the root word
+    int   depth;
     int  *available_first_children; /* an array of len 'wordnum' that holds the
                                        numbers of each word first pair that can
                                        be analyzed to create a child */
@@ -60,10 +61,13 @@ struct cross_elem {
 };
 
 struct cross_elem words[MAXWORDS];
+struct strie_pair *best_branch = NULL;
 
 int build_branch(const int wordnum, struct strie_pair *node);
 struct strie_pair *check_pair(struct strie_pair *main_node, struct strie_pair *check_node);
-int print_branch(const int wordnum, struct strie_pair *node);
+int print_strie(struct strie_pair *node);
+int print_branch(struct strie_pair *node);
+int clear_branch(struct strie_pair *node);
 
 int add_child(struct cross_elem *word, struct strie_pair *new_child)
 {
@@ -131,6 +135,7 @@ int build_pairs(int wordnum)
                         schild->word_coord[0][1] = 0;
                         schild->word_coord[1][0] = schild->crossed_word_letter[0];
                         schild->word_coord[1][1] = schild->crossed_word_letter[1];
+                        schild->depth = 0;
                         schild->procreator = l;
                         schild->firstchild = NULL;
                         schild->brother    = NULL;
@@ -140,6 +145,7 @@ int build_pairs(int wordnum)
 
                         // Add allocated child to the parent
                         add_child(&words[l], schild);
+                        best_branch = schild;
                     }
 
                     tmp_wordpart++;
@@ -210,6 +216,9 @@ int build_branch(const int wordnum, struct strie_pair *main_node)
                         latest_child->brother = schild;
                     }
                     latest_child = schild;
+                    // Check whether it's better than current best_branch
+                    if (best_branch->depth < schild->depth)
+                        best_branch = schild;
                 }
                 tmp_node = tmp_node->brother;
             }
@@ -254,12 +263,12 @@ struct strie_pair *check_pair(struct strie_pair *main_node, struct strie_pair *c
 {
     struct strie_pair *cur_node = main_node;
     struct strie_pair *schild = NULL;
+    struct strie_pair *tmp_node = NULL;
     int i, j, dist, found;
 
     // First we need to check whether the same pair already exists in one of
     // main_node's children
-    cur_node = main_node->firstchild;
-    while (cur_node)
+    for (cur_node = main_node->firstchild; cur_node; cur_node = cur_node->brother)
     {
         if ((cur_node->crossed_word[0] == check_node->crossed_word[0]) && \
             (cur_node->crossed_word[1] == check_node->crossed_word[1]) && \
@@ -268,9 +277,8 @@ struct strie_pair *check_pair(struct strie_pair *main_node, struct strie_pair *c
         {
             return NULL;
         }
-        cur_node = cur_node->brother;
     }
-    // Now check if its the same as one of top node's elder brothers
+    // Now check whether it's the same as one of top node's elder brothers
     // Note, that this check is not necessary - its removal will not lead to
     // great 'wrong' branch growth. If the current branch is wrong, it won't
     // last long after adding one of top node's elder brothers. So this check
@@ -281,11 +289,31 @@ struct strie_pair *check_pair(struct strie_pair *main_node, struct strie_pair *c
     if ((cur_node->crossed_word[0] == check_node->crossed_word[0]) && \
             (cur_node->crossed_word[1] >= check_node->crossed_word[1]))
     {
-        return 0;
+        return NULL;
     }
+    // Check whether it's the same as one of main_node's or any its parent's
+    // elder brothers
+    for (cur_node = main_node; cur_node; cur_node = cur_node->parent)
+    {
+        if (cur_node->parent)
+        {
+            for (tmp_node = cur_node->parent->firstchild; \
+                    tmp_node != cur_node; \
+                    tmp_node = tmp_node->brother)
+            {
+                if ((tmp_node->crossed_word[0] == check_node->crossed_word[0]) && \
+                        (tmp_node->crossed_word[1] == check_node->crossed_word[1]) && \
+                        (tmp_node->crossed_word_letter[0] == check_node->crossed_word_letter[0]) && \
+                        (tmp_node->crossed_word_letter[1] == check_node->crossed_word_letter[1]))
+                {
+                    return NULL;
+                }
+            }
+        }
+    }
+
     // Check current main node and all its parents
-    cur_node = main_node;
-    while (cur_node)
+    for (cur_node = main_node; cur_node; cur_node = cur_node->parent)
     {
         // There can be only one pair of certain words. I.e. word 'i' cann't
         // cross the word 'j' in two places.
@@ -314,6 +342,7 @@ struct strie_pair *check_pair(struct strie_pair *main_node, struct strie_pair *c
                         // allocate new child
                         schild = (struct strie_pair*)calloc(1, sizeof(struct strie_pair));
                         memcpy(schild, check_node, sizeof(struct strie_pair));
+                        schild->depth = main_node->depth + 1;
                         schild->procreator = main_node->procreator;
                         schild->brother = NULL; // because its the brother of the original pair
                         schild->word_orient[j] = cur_node->word_orient[i];
@@ -332,14 +361,12 @@ struct strie_pair *check_pair(struct strie_pair *main_node, struct strie_pair *c
                 }
             }
         }
-
-        cur_node = cur_node->parent;
     }
 
     return schild;
 }
 
-int print_branch(const int wordnum, struct strie_pair *node)
+int print_strie(struct strie_pair *node)
 {
     int i;
     struct strie_pair *tmp_node = NULL;
@@ -350,18 +377,19 @@ int print_branch(const int wordnum, struct strie_pair *node)
     printf("Crossed words: %d, %d\n", node->crossed_word[0], node->crossed_word[1]);
     printf("Crossed words letters: %d, %d\n", node->crossed_word_letter[0], node->crossed_word_letter[1]);
     printf("Orient: %d, %d\n", node->word_orient[0], node->word_orient[1]);
+    printf("Depth: %d\n", node->depth);
     printf("Word coords: [%d, %d]; [%d, %d]\n", node->word_coord[0][0], node->word_coord[0][1], node->word_coord[1][0], node->word_coord[1][1]);
 
     // Go down or to the brother or to the first !NULL parent's brother
     if (node->firstchild)
     {
         printf("\nCHILD:\n");
-        print_branch(wordnum, node->firstchild);
+        print_strie(node->firstchild);
     }
     else if (node->brother)
     {
         printf("\nBROTHER:\n");
-        print_branch(wordnum, node->brother);
+        print_strie(node->brother);
     }
     else if (node->parent)
     {
@@ -376,13 +404,69 @@ int print_branch(const int wordnum, struct strie_pair *node)
         if (tmp_node)
         {
             printf("\nPARENT #%d BROTHER:\n", i);
-            print_branch(wordnum, tmp_node->brother);
+            print_strie(tmp_node->brother);
         }
         else
         {
             // We've processed all tree for one crossword word
             return 0;
         }
+    }
+
+    return 0;
+}
+
+int print_branch(struct strie_pair *node)
+{
+    struct strie_pair *cur_node = node;
+
+    if (!node)
+        return 0;
+
+    printf("\nGenerated crossword puzzle:\n--------------------------------\n");
+    while (cur_node)
+    {
+        printf("Crossed words: %d, %d\n", cur_node->crossed_word[0], cur_node->crossed_word[1]);
+        printf("Crossed words letters: %d, %d\n", cur_node->crossed_word_letter[0], cur_node->crossed_word_letter[1]);
+        printf("Orient: %d, %d\n", cur_node->word_orient[0], cur_node->word_orient[1]);
+        printf("Word coords: [%d, %d]; [%d, %d]\n\n", cur_node->word_coord[0][0], cur_node->word_coord[0][1], cur_node->word_coord[1][0], cur_node->word_coord[1][1]);
+
+        cur_node = cur_node->parent;
+    }
+    return 0;
+}
+
+// Free the allocated memory
+int clear_branch(struct strie_pair *node)
+{
+    struct strie_pair *cur_node = node;
+    struct strie_pair *next_node = NULL;
+
+    if (!node)
+        return 0;
+
+    while (cur_node)
+    {
+        while (cur_node->firstchild)
+            cur_node = cur_node->firstchild;
+
+        if (!(next_node = cur_node->brother))
+        {
+            next_node = cur_node->parent;
+            // If we are not in the root children...
+            if (next_node)
+            {
+                // ...set parent's firstchild to NULL not to process
+                // already freed child
+                next_node->firstchild = NULL;
+            }
+        }
+
+        if (cur_node->available_first_children)
+            free(cur_node->available_first_children);
+        free(cur_node);
+
+        cur_node = next_node;
     }
 
     return 0;
@@ -414,11 +498,21 @@ int main(int argc, char **argv)
     for (i = 0; i < wordnum; i++)
         build_branch(wordnum, words[i].firstchild);
 
+#if DEBUG
     for (i = 0; i < wordnum; i++)
     {
         printf("\n--------------------------------\nword[%d]=%s\n--------------------------------\n", i, words[i].word);
-        print_branch(wordnum, words[i].firstchild);
+        print_strie(words[i].firstchild);
     }
+#endif
 
+    // Print the best branch
+    print_branch(best_branch);
+
+    // Free the memory
+    for (i = 0; i < wordnum; i++)
+    {
+        clear_branch(words[i].firstchild);
+    }
     return 0;
 }
