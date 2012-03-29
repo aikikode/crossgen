@@ -339,14 +339,30 @@ struct strie_pair *check_pair(struct strie_pair *main_node, struct strie_pair *c
                 {
                     if (!schild)
                     {
+                        int dx, dy, tmp;
                         // allocate new child
                         schild = (struct strie_pair*)calloc(1, sizeof(struct strie_pair));
                         memcpy(schild, check_node, sizeof(struct strie_pair));
                         schild->depth = main_node->depth + 1;
                         schild->procreator = main_node->procreator;
                         schild->brother = NULL; // because its the brother of the original pair
+                        if (schild->word_orient[j] != cur_node->word_orient[i])
+                        {
+                            tmp = schild->word_coord[j][0];
+                            schild->word_coord[j][0] = -schild->word_coord[j][1];
+                            schild->word_coord[j][1] = -tmp;
+                            tmp = schild->word_coord[(j - 1) * (j - 1)][0];
+                            schild->word_coord[(j - 1) * (j - 1)][0] = -schild->word_coord[(j - 1) * (j - 1)][1];
+                            schild->word_coord[(j - 1) * (j - 1)][1] = -tmp;
+                        }
                         schild->word_orient[j] = cur_node->word_orient[i];
                         schild->word_orient[(j - 1) * (j - 1)] = -(schild->word_orient[j]);
+                        dx = cur_node->word_coord[i][0] - schild->word_coord[j][0] ;
+                        dy = cur_node->word_coord[i][1] - schild->word_coord[j][1] ;
+                        schild->word_coord[0][0] += dx;
+                        schild->word_coord[0][1] += dy;
+                        schild->word_coord[1][0] += dx;
+                        schild->word_coord[1][1] += dy;
                     }
                     // schild now exists, we need to verify orientation and MINDISTANCE
                     dist = cur_node->crossed_word_letter[i] - check_node->crossed_word_letter[j];
