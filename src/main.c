@@ -36,8 +36,6 @@
                            * in this example the distance between the words is:
                            * 6 - 1 = 5
                            */
-#define DEBUG       0
-
 struct strie_pair {
     int   crossed_word[2];
     int   crossed_word_letter[2];
@@ -108,7 +106,7 @@ int build_pairs(int wordnum)
                 char *tmp_wordpart = words[j].word;
                 while (NULL != (tmp_wordpart = strchr(tmp_wordpart, words[i].word[k])))
                 {
-#if DEBUG
+#ifdef DEBUG
                     printf("crossing between %s and %s: %c, %d, %d\n", \
                             words[i].word, \
                             words[j].word, \
@@ -345,7 +343,7 @@ struct strie_pair *check_pair(struct strie_pair *main_node, struct strie_pair *c
                         memcpy(schild, check_node, sizeof(struct strie_pair));
                         schild->depth = main_node->depth + 1;
                         schild->procreator = main_node->procreator;
-                        schild->brother = NULL; // because its the brother of the original pair
+                        schild->brother = NULL; // because it's the brother of the original pair
                         if (schild->word_orient[j] != cur_node->word_orient[i])
                         {
                             tmp = schild->word_coord[j][0];
@@ -374,6 +372,127 @@ struct strie_pair *check_pair(struct strie_pair *main_node, struct strie_pair *c
                         return schild;
                     }
                     found = 1;
+                }
+            }
+        }
+    }
+
+    // Detect whether our newly added word crosses other words in 'wrong' letters
+    if (schild)
+    {
+        for (cur_node = main_node; cur_node; cur_node = cur_node->parent)
+        {
+            for (i = 0; i < 2; i++)
+            {
+                for (j = 0; j < 2; j++)
+                {
+                    int xa = cur_node->word_coord[i][0];
+                    int ya = cur_node->word_coord[i][1];
+                    int la = words[cur_node->crossed_word[i]].wordlen;
+                    int xb = schild->word_coord[j][0];
+                    int yb = schild->word_coord[j][1];
+                    int lb = words[schild->crossed_word[j]].wordlen;
+                    // If the new word is already in the crossword, its
+                    // position should be the same
+                    if (cur_node->crossed_word[i] == schild->crossed_word[j])
+                    {
+                        if ((cur_node->word_orient[i] != schild->word_orient[j]) || \
+                                (xa != xb) || (ya != yb))
+                        {
+                            free(schild);
+                            schild = NULL;
+                            return schild;
+                        }
+                    }
+                    else
+                    {
+                        // Check intersection based on orientation
+                        if (1 == cur_node->word_orient[i])
+                        {
+                            if (1 == schild->word_orient[j])
+                            {
+                                // Both horizontal - they should have no intersections
+                                dist = ya - yb;
+                                dist = dist < 0 ? -dist : dist;
+                                if ((dist > 1) || (xb > xa + la + 1) || (xa > xb + lb + 1))
+                                {
+                                    continue;
+                                }
+                                else
+                                {
+                                    free(schild);
+                                    schild = NULL;
+                                    return schild;
+                                }
+                            }
+                            else
+                            {
+                                // The word in the crossword (a) - horizontal,
+                                // the new word (b) - vertical
+                                if ((xa > xb + 1) || (xb > xa + la + 1) || (ya > yb + 1) || (ya < yb - lb - 1))
+                                {
+                                    continue;
+                                }
+                                else
+                                {
+                                    // Determine the letter position in each word
+                                    int apos = xb - xa;
+                                    int bpos = yb - ya;
+                                    if ((apos >= la) || (bpos >= lb) || \
+                                            (words[cur_node->crossed_word[i]].word[apos] != words[schild->crossed_word[j]].word[bpos]))
+                                    {
+                                        free(schild);
+                                        schild = NULL;
+                                        return schild;
+                                    }
+                                }
+                            }
+                        }
+                        else
+                        {
+                            if (1 == schild->word_orient[j])
+                            {
+                                // Original (a) - vertical
+                                // New (b) - horizontal
+                                if ((xb > xa + 1) || (xa > xb + lb + 1) || (yb > ya + 1) || (yb < ya - la - 1))
+                                {
+                                    continue;
+                                }
+                                else
+                                {
+                                    // Determine the letter position in each word
+                                    int bpos = xa - xb;
+                                    int apos = ya - yb;
+                                    if ((apos >= la) || (bpos >= lb) || \
+                                            (words[cur_node->crossed_word[i]].word[apos] != words[schild->crossed_word[j]].word[bpos]))
+                                    {
+                                        free(schild);
+                                        schild = NULL;
+                                        return schild;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                // Both are vertical - there should be no intersections
+                                dist = xa - xb;
+                                dist = dist < 0 ? -dist : dist;
+                                if ((dist > 1) || (yb < ya - la - 1) || (ya < yb - lb - 1))
+                                {
+                                    continue;
+                                }
+                                else
+                                {
+                                    free(schild);
+                                    schild = NULL;
+                                    return schild;
+                                }
+                            }
+                        }
+                        // If we reach this code, it means that 'i' and 'j'
+                        // words cross. Should detect whether this crossing is
+                        // legal, i.e. crossed letter is the same in both words
+                    }
                 }
             }
         }
@@ -442,10 +561,14 @@ int print_branch(struct strie_pair *node)
     printf("\nGenerated crossword puzzle:\n--------------------------------\n");
     while (cur_node)
     {
-        printf("Crossed words: %d, %d\n", cur_node->crossed_word[0], cur_node->crossed_word[1]);
-        printf("Crossed words letters: %d, %d\n", cur_node->crossed_word_letter[0], cur_node->crossed_word_letter[1]);
-        printf("Orient: %d, %d\n", cur_node->word_orient[0], cur_node->word_orient[1]);
-        printf("Word coords: [%d, %d]; [%d, %d]\n\n", cur_node->word_coord[0][0], cur_node->word_coord[0][1], cur_node->word_coord[1][0], cur_node->word_coord[1][1]);
+        printf("Crossed words:\t%d, %s\t-\t%d, %s\n", \
+                cur_node->crossed_word[0], \
+                words[cur_node->crossed_word[0]].word, \
+                cur_node->crossed_word[1], \
+                words[cur_node->crossed_word[1]].word);
+        printf("Letters:\t%d\t%d\n", cur_node->crossed_word_letter[0], cur_node->crossed_word_letter[1]);
+        printf("Orient:\t\t%s\t%s\n", cur_node->word_orient[0] == 1 ? "hor" : "ver", cur_node->word_orient[1] == 1 ? "hor" : "ver" );
+        printf("Word coords:\t[%d, %d]\t[%d, %d]\n\n", cur_node->word_coord[0][0], cur_node->word_coord[0][1], cur_node->word_coord[1][0], cur_node->word_coord[1][1]);
 
         cur_node = cur_node->parent;
     }
@@ -514,7 +637,7 @@ int main(int argc, char **argv)
     for (i = 0; i < wordnum; i++)
         build_branch(wordnum, words[i].firstchild);
 
-#if DEBUG
+#ifdef DEBUG
     for (i = 0; i < wordnum; i++)
     {
         printf("\n--------------------------------\nword[%d]=%s\n--------------------------------\n", i, words[i].word);

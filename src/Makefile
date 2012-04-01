@@ -1,5 +1,6 @@
 CC=gcc
 OPTIMIZE=-g -O0
+DEBUG=           # use '-DDEBUG' for debug output
 
 OBJS= main.o
 
@@ -13,7 +14,7 @@ TARGET=../bin/crossgen
 all: $(TARGET)
 
 %.o: %.c
-	$(CC) -c $(OPTIMIZE) $(CFLAGS) -o $@ $<
+	$(CC) -c $(OPTIMIZE) $(DEBUG) $(CFLAGS) -o $@ $<
 
 $(TARGET): $(OBJS)
 	$(CC) -o $@ $(OBJS)
