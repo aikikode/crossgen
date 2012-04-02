@@ -166,85 +166,91 @@ int build_branch(const int wordnum, struct strie_pair *main_node)
     struct strie_pair *latest_child = NULL;
     int *cur_available_first_children = NULL;
 
-    if (!main_node)
-        return 0;
-
-    cur_available_first_children = (int *)calloc(wordnum, sizeof(int));
-    memcpy(cur_available_first_children, \
-            main_node->available_first_children, \
-            sizeof(int) * wordnum);
-
-    // cur_node  - the node, which participants we are trying to scan
-    // main_node - the node _to_ which we are trying to add these participants
-    while (cur_node)
+    while (main_node)
     {
-        for (cur_word_num = 0; cur_word_num < 2; cur_word_num++)
+        cur_available_first_children = (int *)calloc(wordnum, sizeof(int));
+        memcpy(cur_available_first_children, \
+                main_node->available_first_children, \
+                sizeof(int) * wordnum);
+
+        // cur_node  - the node, which participants we are trying to scan
+        // main_node - the node _to_ which we are trying to add these participants
+        cur_node = main_node;
+        while (cur_node)
         {
-            // The global index of the word to check
-            checking_word_num = cur_node->crossed_word[cur_word_num];
-            // We shouldn't allow to search previous words for pairs
-            if (checking_word_num < cur_node->procreator)
-                break;
-
-            if (!(tmp_node = words[checking_word_num].firstchild))
-                break;
-
-            for (j = 0; j < cur_available_first_children[checking_word_num]; j++)
-                tmp_node = tmp_node->brother;
-
-            while (tmp_node)
+            for (cur_word_num = 0; cur_word_num < 2; cur_word_num++)
             {
-                cur_available_first_children[checking_word_num]++;
-                if (NULL != (schild = check_pair(main_node, tmp_node)))
+                // The global index of the word to check
+                checking_word_num = cur_node->crossed_word[cur_word_num];
+                // We shouldn't allow to search previous words for pairs
+                if (checking_word_num < cur_node->procreator)
+                    break;
+
+                if (!(tmp_node = words[checking_word_num].firstchild))
+                    break;
+
+                for (j = 0; j < cur_available_first_children[checking_word_num]; j++)
+                    tmp_node = tmp_node->brother;
+
+                while (tmp_node)
                 {
-                    // Add new child to main_node
-                    schild->parent = main_node;
-                    schild->available_first_children = (int *)calloc(wordnum, sizeof(int));
-                    memcpy(schild->available_first_children, \
-                            cur_available_first_children, \
-                            sizeof(int) * wordnum);
-                    // Add child to the parent either as the first
-                    // child or add the brother to the latest child
-                    if (NULL == main_node->firstchild || NULL == latest_child)
+                    cur_available_first_children[checking_word_num]++;
+                    if (NULL != (schild = check_pair(main_node, tmp_node)))
                     {
-                        main_node->firstchild = schild;
+                        // Add new child to main_node
+                        schild->parent = main_node;
+                        schild->available_first_children = (int *)calloc(wordnum, sizeof(int));
+                        memcpy(schild->available_first_children, \
+                                cur_available_first_children, \
+                                sizeof(int) * wordnum);
+                        // Add child to the parent either as the first
+                        // child or add the brother to the latest child
+                        if (NULL == main_node->firstchild || NULL == latest_child)
+                        {
+                            main_node->firstchild = schild;
+                        }
+                        else
+                        {
+                            latest_child->brother = schild;
+                        }
+                        latest_child = schild;
+                        // Check whether it's better than current best_branch
+                        if (best_branch->depth < schild->depth)
+                            best_branch = schild;
                     }
-                    else
-                    {
-                        latest_child->brother = schild;
-                    }
-                    latest_child = schild;
-                    // Check whether it's better than current best_branch
-                    if (best_branch->depth < schild->depth)
-                        best_branch = schild;
+                    tmp_node = tmp_node->brother;
                 }
-                tmp_node = tmp_node->brother;
             }
+            cur_node = cur_node->parent;
         }
-        cur_node = cur_node->parent;
-    }
 
-    if (cur_available_first_children)
-        free(cur_available_first_children);
+        if (cur_available_first_children)
+            free(cur_available_first_children);
 
-    // Go down or to the brother or to the first !NULL parent's brother
-    if (main_node->firstchild)
-    {
-        build_branch(wordnum, main_node->firstchild);
-    }
-    else if (main_node->brother)
-    {
-        build_branch(wordnum, main_node->brother);
-    }
-    else if (main_node->parent)
-    {
-        // Find first parent's brother != NULL
-        tmp_node = main_node->parent;
-        while (tmp_node && !tmp_node->brother)
-            tmp_node = tmp_node->parent;
-        if (tmp_node)
+        // Go down or to the brother or to the first !NULL parent's brother
+        if (main_node->firstchild)
         {
-            build_branch(wordnum, tmp_node->brother);
+            main_node = main_node->firstchild;
+        }
+        else if (main_node->brother)
+        {
+            main_node = main_node->brother;
+        }
+        else if (main_node->parent)
+        {
+            // Find first parent's brother != NULL
+            tmp_node = main_node->parent;
+            while (tmp_node && !tmp_node->brother)
+                tmp_node = tmp_node->parent;
+            if (tmp_node)
+            {
+                main_node = tmp_node->brother;
+            }
+            else
+            {
+                // We've processed all tree for one crossword word
+                return 0;
+            }
         }
         else
         {
