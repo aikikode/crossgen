@@ -1,3 +1,178 @@
 Crossword Generator
 ===================
-Provided a set of words and definitions creates a crossword puzzle
+Provided a set of words create a crossword puzzle which best fulfills
+specified conditions, e.g.:
+1) the one which has most number of crossings between words,
+2) or the one which has the most number of words,
+3) etc.
+
+Algorithm
+=========
+The algo is based on suffix tree where nodes are pairs of crossed words.
+
+Firstly we generate all possible pairs between the words - these will be the
+roots of our stries.
+
+Secondly we start building branches for the strie by walking down leave by
+leave and crafting the tree with more and more pairs that have intersects with
+what is already in the current tree.
+
+For example lets assume we have only three words:
++---+------+
+| 0 |  cat |
++---+------+
+| 1 | coin |
++---+------+
+| 2 | tram |
++---+------+
+
+Each node should represent the index of crossed words, the crossed letters and
+also the 'root' word, words coordinates and orientation (whether each word is
+horizontal or vertical), we'll see later why so much is needed.
+
+Lets first build all pairs
+1) cat (0) and coin (1); letter 'c', which is letter 0 of word 'cat' and letter 0 for word 'coin'
+2) cat (0) and tram (2); letter 'a', which is letter 1 of word 'cat' and letter 2 for word 'tram'
+3) cat (0) and tram (2); letter 't', which is letter 2 of word 'cat' and letter 0 for word 'tram'
+
+        0                 1             2
+       cat               coin         tram
+     /  |  \              |            / \
+   /    |    \            |           /   \
+0-1    0-2(1) 0-2(2)     0-1        0-2(1) 0-2(2)
+
+Note: two (0-2)s of 0's and 2's word are different by the crossed letters (see pairs 2 and 3 above).
+
+Start building the strie for the very first node 0-1 of 0's word.
+
+! General rules:
+!
+! When building a strie for node with pair of (i-j) of root word N, for current
+! node (i-j) and all its parents look through word[i] and word[j] children.
+!
+! To look for word[i] children, i should be > N, so if we are under 4th word
+! branch we won't look for possible pairs of word 3 or 2 and etc.
+!
+! For each node we have a list of latest pairs for each word that we've
+! already looked through, so we won't start from the every first child again
+! when looking for possible pair of the same word again.
+!
+! We don't add a child to the current node if the same pair is one of this
+! node's or any of its parent's elder children
+!
+! When all children for current node are added we go down the first child or to
+! the brother or to the first parent's existing brother and repeat the
+! procedure.
+
+So next (and last) step is:
+        0                 1             2
+       cat               coin         tram
+     /  |  \              |            / \
+   /    |    \            |           /   \
+0-1    0-2(1) 0-2(2)     0-1        0-2(1) 0-2(2)
+ |
+0-2(2)
+
+Now we can't add any other node without breaking the general rule.
+
+Lets take more complex example with four words:
++---+------+
+| 0 |  cat |
++---+------+
+| 1 | coin |
++---+------+
+| 2 | trek |
++---+------+
+| 3 |  kid |
++---+------+
+
+the first step is the same: build all pairs.
+1) crossing between cat and coin: c, 0, 0
+2) crossing between cat and trek: t, 2, 0
+3) crossing between coin and kid: i, 2, 1
+4) crossing between trek and kid: k, 3, 0
+     0             1             2            3
+    cat           coin          trek         kid
+   /   \          /  \          /  \         / \
+  /     \        /    \        /    \       /   \
+0-1     0-2    0-1    0-3    0-2    2-3   1-3   2-3
+
+Now build children for (0)(0-1) node (0 in braces means the 'root word
+number'). First we take first pair participant - 0.  And look for its other
+pairs. Its only pair left is (0-2). It doesn't interfere with any other
+existing word in current branch so we add it:
+     0             1             2            3
+    cat           coin          trek         kid
+   /   \          /  \          /  \         / \
+  /     \        /    \        /    \       /   \
+0-1     0-2    0-1    1-3    0-2    2-3   1-3   2-3
+ |
+0-2
+
+We are still at node (0)(0-1). And we are looking for any other possible
+children. There are no words left at node 0, so we take second pair participant
+- 1. It has 2 children: (1)(0-1) and (1)(0-3). We can't take (1)(0-1) because
+it's the same pair as we are (not the same node), so we take pair (1)(1-3). It
+also fits to our crossword.
+        0             1             2            3
+       cat           coin          trek         kid
+      /   \          /  \          /  \         / \
+     /     \        /    \        /    \       /   \
+   0-1     0-2    0-1    1-3    0-2    2-3   1-3   2-3
+   / \
+0-2   1-3
+
+Current node (0)(0-1) can't have any other children since we already looked
+through all nodes for 0 and 1 word and this node doesn't have any parents to
+look for.
+So we proceed to its first child (0)(0-1)(0-2). First we try to search node 0,
+but we've already looked through all its children. So we go to root node 2.
+It has 2 children: (2)(0-2) and (2)(2-3). (2)(0-2) is also the same pair as
+(0)(0-2) and we skip it. But node (2)(2-3) is new one. It fits and we keep
+it.
+        0             1             2            3
+       cat           coin          trek         kid
+      /   \          /  \          /  \         / \
+     /     \        /    \        /    \       /   \
+   0-1     0-2    0-1    1-3    0-2    2-3   1-3   2-3
+   / \
+0-2   1-3
+ |
+2-3
+
+But it's not the only possible child for (0)(0-1)(0-2). Yes, this very node has
+no other pair but is we move upwards to its parent (0)(0-1), we'll see that we
+haven't searched node 1. And node 1 has pair (1)(1-3). And we add it.
+           0             1             2            3
+          cat           coin          trek         kid
+         /   \          /  \          /  \         / \
+        /     \        /    \        /    \       /   \
+      0-1     0-2    0-1    1-3    0-2    2-3   1-3   2-3
+      / \
+   0-2   1-3
+   / \
+2-3   1-3
+
+Now node (0)(0-1)(0-2) has no other children. We move to its first child (2-3).
+But if we look for possible pairs now, we'll find out, that there's nothing
+left. Sure, if we take node 3 and try to add node (3)(1-3), it will conflict
+with node (0)(0-1). More than that, the depth is already 3 which means that we
+have already included all 4 words.
+If we look at other nodes, we'll notice that no other child can be added
+without the breaking of general rule. So this picture is final.
+
+As we can see, there are 2 crosswords with same number of words and crossings:
+a) (0)(0-1)(0-2)(2-3) and
+b) (0)(0-1)(0-2)(1-3).
+
+And graphical:
+        a)                  b)
+     +-+-+-+              +-+-+-+
+     |c|a|t|              |c|a|t|
+     +-+-+-+              +-+-+-+
+     |o| |r|              |o| |r|
+     +-+ +-+            +-+-+-+-+
+     |i| |e|            |k|i|d|e|
+     +-+ +-+-+-+        +-+-+-+-+
+     |n| |k|i|d|          |n| |k|
+     +-+ +-+-+-+          +-+ +-+

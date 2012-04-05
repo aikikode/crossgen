@@ -1,0 +1,6 @@
+v0.1 - 2012.04.05
+-----------------------------------------------------------------------------
+* Initial version of crossgen
+* Takes a list of words form a text file and generates their combination with
+  maximum number of words and crossings
+* Program output: word coordinates & orientation
