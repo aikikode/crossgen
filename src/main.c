@@ -20,9 +20,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
-#define MAXWORDS    1000  // maximum number of words to create a crossword from
-#define MAXWORDLEN  30
+#define MAXWORDS    10    // maximum number of words to create a crossword from
+#define MAXWORDLEN  15
 
 #define MINDISTANCE 2     /* minimum distance between the crossing words, e.g.
                            *        0123456
@@ -33,17 +34,17 @@
                            *         i    i
                            *         a    l
                            *
-                           * in this example the distance between the words is:
+                           * in this example the distance between the words is
                            * 6 - 1 = 5
                            */
 struct strie_pair {
-    int   crossed_word[2];
-    int   crossed_word_letter[2];
-    int   word_orient[2];   // 1 - horisontal; -1 - vertical
-    int   word_coord[2][2]; // coordinates of the beginning of the word
-    int   procreator;       // the number of the root word
-    int   depth;
-    int  *available_first_children; /* an array of len 'wordnum' that holds the
+    short   crossed_word[2];
+    short   crossed_word_letter[2];
+    short   word_orient[2];   // 1 - horisontal; -1 - vertical
+    short   word_coord[2][2]; // coordinates of the beginning of the word
+    short   procreator;       // the number of the root word
+    short   depth;
+    short  *available_first_children; /* an array of len 'wordnum' that holds the
                                        numbers of each word first pair that can
                                        be analyzed to create a child */
     struct strie_pair *firstchild;
@@ -52,16 +53,16 @@ struct strie_pair {
 };
 
 struct cross_elem {
-    char  word[MAXWORDLEN];
-    int   wordlen;
-    int   childnum;    // number of pairs between this words and later words
-    struct strie_pair *firstchild;
+    char    word[MAXWORDLEN];
+    short   wordlen;
+    short   childnum;    // number of pairs between this words and later words
+    struct  strie_pair *firstchild;
 };
 
 struct cross_elem words[MAXWORDS];
 struct strie_pair *best_branch = NULL;
 
-int build_branch(const int wordnum, struct strie_pair *node);
+int build_branch(const short wordnum, struct strie_pair *node);
 struct strie_pair *check_pair(struct strie_pair *main_node, struct strie_pair *check_node);
 int print_strie(struct strie_pair *node);
 int print_branch(struct strie_pair *node);
@@ -92,7 +93,7 @@ int add_child(struct cross_elem *word, struct strie_pair *new_child)
 /*
  * Take wordnum elements and find all crossings between them
  */
-int build_pairs(int wordnum)
+int build_pairs(short wordnum)
 {
     int i, j, k, l;
     for (i = 0; i < wordnum; i++)
@@ -138,7 +139,7 @@ int build_pairs(int wordnum)
                         schild->firstchild = NULL;
                         schild->brother    = NULL;
                         schild->parent     = NULL;
-                        schild->available_first_children = (int *)calloc(wordnum, sizeof(int));
+                        schild->available_first_children = (short *)calloc(wordnum, sizeof(short));
                         schild->available_first_children[l] = words[l].childnum;
 
                         // Add allocated child to the parent
@@ -157,21 +158,22 @@ int build_pairs(int wordnum)
 /* Its goal is to add all children to the current node, move the current node
  * pointer and recursively call itself.
  */
-int build_branch(const int wordnum, struct strie_pair *main_node)
+int build_branch(const short wordnum, struct strie_pair *main_node)
 {
-    int j, cur_word_num, checking_word_num;
+    int j;
+    short  cur_word_num, checking_word_num;
     struct strie_pair *cur_node = main_node;
     struct strie_pair *tmp_node = NULL;
     struct strie_pair *schild   = NULL;
     struct strie_pair *latest_child = NULL;
-    int *cur_available_first_children = NULL;
+    short *cur_available_first_children = NULL;
 
     while (main_node)
     {
-        cur_available_first_children = (int *)calloc(wordnum, sizeof(int));
+        cur_available_first_children = (short *)calloc(wordnum, sizeof(short));
         memcpy(cur_available_first_children, \
                 main_node->available_first_children, \
-                sizeof(int) * wordnum);
+                sizeof(short) * wordnum);
 
         // cur_node  - the node, which participants we are trying to scan
         // main_node - the node _to_ which we are trying to add these participants
@@ -199,10 +201,10 @@ int build_branch(const int wordnum, struct strie_pair *main_node)
                     {
                         // Add new child to main_node
                         schild->parent = main_node;
-                        schild->available_first_children = (int *)calloc(wordnum, sizeof(int));
+                        schild->available_first_children = (short *)calloc(wordnum, sizeof(short));
                         memcpy(schild->available_first_children, \
                                 cur_available_first_children, \
-                                sizeof(int) * wordnum);
+                                sizeof(short) * wordnum);
                         // Add child to the parent either as the first
                         // child or add the brother to the latest child
                         if (NULL == main_node->firstchild || NULL == latest_child)
@@ -268,7 +270,7 @@ struct strie_pair *check_pair(struct strie_pair *main_node, struct strie_pair *c
     struct strie_pair *cur_node = main_node;
     struct strie_pair *schild = NULL;
     struct strie_pair *tmp_node = NULL;
-    int i, j, dist, found;
+    short i, j, dist, found;
 
     // First we need to check whether the same pair already exists in one of
     // main_node's children
@@ -343,7 +345,7 @@ struct strie_pair *check_pair(struct strie_pair *main_node, struct strie_pair *c
                 {
                     if (!schild)
                     {
-                        int dx, dy, tmp;
+                        short dx, dy, tmp;
                         // allocate new child
                         schild = (struct strie_pair*)calloc(1, sizeof(struct strie_pair));
                         memcpy(schild, check_node, sizeof(struct strie_pair));
@@ -392,12 +394,12 @@ struct strie_pair *check_pair(struct strie_pair *main_node, struct strie_pair *c
             {
                 for (j = 0; j < 2; j++)
                 {
-                    int xa = cur_node->word_coord[i][0];
-                    int ya = cur_node->word_coord[i][1];
-                    int la = words[cur_node->crossed_word[i]].wordlen;
-                    int xb = schild->word_coord[j][0];
-                    int yb = schild->word_coord[j][1];
-                    int lb = words[schild->crossed_word[j]].wordlen;
+                    short xa = cur_node->word_coord[i][0];
+                    short ya = cur_node->word_coord[i][1];
+                    short la = words[cur_node->crossed_word[i]].wordlen;
+                    short xb = schild->word_coord[j][0];
+                    short yb = schild->word_coord[j][1];
+                    short lb = words[schild->crossed_word[j]].wordlen;
                     // If the new word is already in the crossword, its
                     // position should be the same
                     if (cur_node->crossed_word[i] == schild->crossed_word[j])
@@ -420,11 +422,9 @@ struct strie_pair *check_pair(struct strie_pair *main_node, struct strie_pair *c
                                 // Both horizontal - they should have no intersections
                                 dist = ya - yb;
                                 dist = dist < 0 ? -dist : dist;
-                                if ((dist > 1) || (xb > xa + la + 1) || (xa > xb + lb + 1))
-                                {
-                                    continue;
-                                }
-                                else
+                                if (!((dist >= MINDISTANCE) || \
+                                            (xb >= xa + la - 1 + MINDISTANCE) || \
+                                            (xa >= xb + lb - 1 + MINDISTANCE)))
                                 {
                                     free(schild);
                                     schild = NULL;
@@ -435,15 +435,14 @@ struct strie_pair *check_pair(struct strie_pair *main_node, struct strie_pair *c
                             {
                                 // The word in the crossword (a) - horizontal,
                                 // the new word (b) - vertical
-                                if ((xa > xb + 1) || (xb > xa + la + 1) || (ya > yb + 1) || (ya < yb - lb - 1))
-                                {
-                                    continue;
-                                }
-                                else
+                                if (!((xa >= xb + MINDISTANCE) || \
+                                        (xb >= xa + la - 1 + MINDISTANCE) || \
+                                        (ya >= yb + MINDISTANCE) || \
+                                        (ya <= yb - lb + 1 - MINDISTANCE)))
                                 {
                                     // Determine the letter position in each word
-                                    int apos = xb - xa;
-                                    int bpos = yb - ya;
+                                    short apos = xb - xa;
+                                    short bpos = yb - ya;
                                     if ((apos >= la) || (bpos >= lb) || \
                                             (words[cur_node->crossed_word[i]].word[apos] != words[schild->crossed_word[j]].word[bpos]))
                                     {
@@ -460,15 +459,14 @@ struct strie_pair *check_pair(struct strie_pair *main_node, struct strie_pair *c
                             {
                                 // Original (a) - vertical
                                 // New (b) - horizontal
-                                if ((xb > xa + 1) || (xa > xb + lb + 1) || (yb > ya + 1) || (yb < ya - la - 1))
-                                {
-                                    continue;
-                                }
-                                else
+                                if (!((xb >= xa + MINDISTANCE) || \
+                                            (xa >= xb + lb -1 + MINDISTANCE) || \
+                                            (yb >= ya + MINDISTANCE) || \
+                                            (yb <= ya - la + 1 - MINDISTANCE)))
                                 {
                                     // Determine the letter position in each word
-                                    int bpos = xa - xb;
-                                    int apos = ya - yb;
+                                    short bpos = xa - xb;
+                                    short apos = ya - yb;
                                     if ((apos >= la) || (bpos >= lb) || \
                                             (words[cur_node->crossed_word[i]].word[apos] != words[schild->crossed_word[j]].word[bpos]))
                                     {
@@ -483,11 +481,9 @@ struct strie_pair *check_pair(struct strie_pair *main_node, struct strie_pair *c
                                 // Both are vertical - there should be no intersections
                                 dist = xa - xb;
                                 dist = dist < 0 ? -dist : dist;
-                                if ((dist > 1) || (yb < ya - la - 1) || (ya < yb - lb - 1))
-                                {
-                                    continue;
-                                }
-                                else
+                                if (!((dist >= MINDISTANCE) || \
+                                            (yb <= ya - la + 1 - MINDISTANCE) || \
+                                            (ya <= yb - lb + 1 - MINDISTANCE)))
                                 {
                                     free(schild);
                                     schild = NULL;
@@ -557,8 +553,10 @@ int print_strie(struct strie_pair *node)
     return 0;
 }
 
+// Print the branch from the current node to the root
 int print_branch(struct strie_pair *node)
 {
+    int i, index;
     struct strie_pair *cur_node = node;
 
     if (!node)
@@ -567,14 +565,37 @@ int print_branch(struct strie_pair *node)
     printf("\nGenerated crossword puzzle:\n--------------------------------\n");
     while (cur_node)
     {
+        // Mark intersection letters uppercase
+        for (i = 0; i < 2; i++)
+        {
+            index = cur_node->crossed_word_letter[i];
+            words[cur_node->crossed_word[i]].word[index] = \
+                toupper(words[cur_node->crossed_word[i]].word[index]);
+        }
         printf("Crossed words:\t%d, %s\t-\t%d, %s\n", \
                 cur_node->crossed_word[0], \
                 words[cur_node->crossed_word[0]].word, \
                 cur_node->crossed_word[1], \
                 words[cur_node->crossed_word[1]].word);
-        printf("Letters:\t%d\t%d\n", cur_node->crossed_word_letter[0], cur_node->crossed_word_letter[1]);
-        printf("Orient:\t\t%s\t%s\n", cur_node->word_orient[0] == 1 ? "hor" : "ver", cur_node->word_orient[1] == 1 ? "hor" : "ver" );
-        printf("Word coords:\t[%d, %d]\t[%d, %d]\n\n", cur_node->word_coord[0][0], cur_node->word_coord[0][1], cur_node->word_coord[1][0], cur_node->word_coord[1][1]);
+        printf("Letters:\t%d\t%d\n", \
+                cur_node->crossed_word_letter[0], \
+                cur_node->crossed_word_letter[1]);
+        printf("Orient:\t\t%s\t%s\n", \
+                cur_node->word_orient[0] == 1 ? "hor" : "ver", \
+                cur_node->word_orient[1] == 1 ? "hor" : "ver" );
+        printf("Word coords:\t[%d, %d]\t[%d, %d]\n\n", \
+                cur_node->word_coord[0][0], \
+                cur_node->word_coord[0][1], \
+                cur_node->word_coord[1][0], \
+                cur_node->word_coord[1][1]);
+
+        // Mark intersection letters lowercase back
+        for (i = 0; i < 2; i++)
+        {
+            index = cur_node->crossed_word_letter[i];
+            words[cur_node->crossed_word[i]].word[index] = \
+                tolower(words[cur_node->crossed_word[i]].word[index]);
+        }
 
         cur_node = cur_node->parent;
     }
@@ -619,19 +640,30 @@ int clear_branch(struct strie_pair *node)
 
 int main(int argc, char **argv)
 {
-    int i, wordnum = 0;
+    int i, j, wordnum = 0;
+    FILE *fwords = NULL;
 
-    // Input the words to build the crossword from and store them in 'words'
-    // structs
-    printf("Welcome to Crossword Generator\n==============================\n");
-    printf("How many words would you like to enter: ");
-    scanf("%d", &wordnum);
-    for (i = 0; i < wordnum; i++)
+    if (2 != argc)
     {
-        printf("Input word #%d: ", i + 1);
-        scanf("%s", words[i].word);
-        words[i].wordlen = strlen(words[i].word);
+        printf("Usage: %s <file with a list of words>\n", argv[0]);
+        printf("\nMax words: %d\nMax wordlen: %d\n", MAXWORDS, MAXWORDLEN);
+        return 1;
     }
+
+    printf("Welcome to Crossword Generator\n==============================\n");
+
+    // Read input words to the words[] array
+    fwords = fopen(argv[1], "r");
+    for (i = 0; NULL != fgets(words[i].word, MAXWORDLEN, fwords) && i < MAXWORDS; i++)
+    {
+        // Remove newline symbol
+        words[i].wordlen = strlen(words[i].word) - 1;
+        words[i].word[words[i].wordlen] = '\0';
+        for (j = 0; j < words[i].wordlen; j++)
+            words[i].word[j] = tolower(words[i].word[j]);
+        printf("Word #%d: %s, %d\n", i, words[i].word, words[i].wordlen);
+    }
+    wordnum = i;
 
     // Build inital word pairs that we'll be using a lot later
     if (build_pairs(wordnum))
@@ -639,7 +671,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "Error building pairs between words\n");
         return 1;
     }
-    // Fill the tree with all possible pairs. Scan all the words but one
+    // Fill the tree with all possible pairs. Scan all the words.
     for (i = 0; i < wordnum; i++)
         build_branch(wordnum, words[i].firstchild);
 
@@ -651,13 +683,12 @@ int main(int argc, char **argv)
     }
 #endif
 
-    // Print the best branch
+    // Print the best branch if any
     print_branch(best_branch);
 
     // Free the memory
     for (i = 0; i < wordnum; i++)
-    {
         clear_branch(words[i].firstchild);
-    }
+
     return 0;
 }

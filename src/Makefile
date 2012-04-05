@@ -17,6 +17,7 @@ all: $(TARGET)
 	$(CC) -c $(OPTIMIZE) $(DEBUG) $(CFLAGS) -o $@ $<
 
 $(TARGET): $(OBJS)
+	@if [ ! -d ../bin ]; then mkdir ../bin; fi
 	$(CC) -o $@ $(OBJS)
 
 clean: cleanobjs
