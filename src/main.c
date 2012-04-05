@@ -643,14 +643,15 @@ int main(int argc, char **argv)
     int i, j, wordnum = 0;
     FILE *fwords = NULL;
 
+    printf("Welcome to Crossword Generator v0.1\n");
+    printf("===================================\n");
+
     if (2 != argc)
     {
         printf("Usage: %s <file with a list of words>\n", argv[0]);
         printf("\nMax words: %d\nMax wordlen: %d\n", MAXWORDS, MAXWORDLEN);
         return 1;
     }
-
-    printf("Welcome to Crossword Generator\n==============================\n");
 
     // Read input words to the words[] array
     fwords = fopen(argv[1], "r");
