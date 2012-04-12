@@ -61,6 +61,7 @@ struct cross_elem {
 
 struct cross_elem words[MAXWORDS];
 struct strie_pair *best_branch = NULL;
+struct strie_pair *common_parent = NULL;
 
 int build_branch(const short wordnum, struct strie_pair *node);
 struct strie_pair *check_pair(struct strie_pair *main_node, struct strie_pair *check_node);
@@ -144,7 +145,6 @@ int build_pairs(short wordnum)
 
                         // Add allocated child to the parent
                         add_child(&words[l], schild);
-                        best_branch = schild;
                     }
 
                     tmp_wordpart++;
@@ -156,7 +156,7 @@ int build_pairs(short wordnum)
 }
 
 /* Its goal is to add all children to the current node, move the current node
- * pointer and recursively call itself.
+ * pointer and recursively continue
  */
 int build_branch(const short wordnum, struct strie_pair *main_node)
 {
@@ -165,12 +165,12 @@ int build_branch(const short wordnum, struct strie_pair *main_node)
     struct strie_pair *cur_node = main_node;
     struct strie_pair *tmp_node = NULL;
     struct strie_pair *schild   = NULL;
-    struct strie_pair *latest_child = NULL;
-    short *cur_available_first_children = NULL;
+    short *cur_available_first_children = (short *)calloc(wordnum, sizeof(short));
 
     while (main_node)
     {
-        cur_available_first_children = (short *)calloc(wordnum, sizeof(short));
+        schild = NULL;
+        memset(cur_available_first_children, '\0', sizeof(short));
         memcpy(cur_available_first_children, \
                 main_node->available_first_children, \
                 sizeof(short) * wordnum);
@@ -178,7 +178,7 @@ int build_branch(const short wordnum, struct strie_pair *main_node)
         // cur_node  - the node, which participants we are trying to scan
         // main_node - the node _to_ which we are trying to add these participants
         cur_node = main_node;
-        while (cur_node)
+        while (cur_node && !schild)
         {
             for (cur_word_num = 0; cur_word_num < 2; cur_word_num++)
             {
@@ -188,13 +188,17 @@ int build_branch(const short wordnum, struct strie_pair *main_node)
                 if (checking_word_num < cur_node->procreator)
                     break;
 
+                // We have nothing to check if the current word doesn't have
+                // any children
                 if (!(tmp_node = words[checking_word_num].firstchild))
                     break;
 
+                // Get to the first child we can start iterate from
                 for (j = 0; j < cur_available_first_children[checking_word_num]; j++)
                     tmp_node = tmp_node->brother;
 
-                while (tmp_node)
+                // Switch words crossed pairs
+                while (tmp_node && !schild)
                 {
                     cur_available_first_children[checking_word_num]++;
                     if (NULL != (schild = check_pair(main_node, tmp_node)))
@@ -205,20 +209,22 @@ int build_branch(const short wordnum, struct strie_pair *main_node)
                         memcpy(schild->available_first_children, \
                                 cur_available_first_children, \
                                 sizeof(short) * wordnum);
+                        // Also update the main node 'available children'
+                        memcpy(main_node->available_first_children, \
+                                cur_available_first_children, \
+                                sizeof(short) * wordnum);
                         // Add child to the parent either as the first
-                        // child or add the brother to the latest child
-                        if (NULL == main_node->firstchild || NULL == latest_child)
+                        // child or add the brother to the first child
+                        if (NULL == main_node->firstchild)
                         {
                             main_node->firstchild = schild;
                         }
                         else
                         {
-                            latest_child->brother = schild;
+                            // If we are adding a brother - main_node is a 'common_parent'
+                            main_node->firstchild->brother = schild;
+                            common_parent = main_node;
                         }
-                        latest_child = schild;
-                        // Check whether it's better than current best_branch
-                        if (best_branch->depth < schild->depth)
-                            best_branch = schild;
                     }
                     tmp_node = tmp_node->brother;
                 }
@@ -226,40 +232,124 @@ int build_branch(const short wordnum, struct strie_pair *main_node)
             cur_node = cur_node->parent;
         }
 
-        if (cur_available_first_children)
-            free(cur_available_first_children);
-
-        // Go down or to the brother or to the first !NULL parent's brother
-        if (main_node->firstchild)
+        if (schild)
         {
-            main_node = main_node->firstchild;
-        }
-        else if (main_node->brother)
-        {
-            main_node = main_node->brother;
-        }
-        else if (main_node->parent)
-        {
-            // Find first parent's brother != NULL
-            tmp_node = main_node->parent;
-            while (tmp_node && !tmp_node->brother)
-                tmp_node = tmp_node->parent;
-            if (tmp_node)
-            {
-                main_node = tmp_node->brother;
-            }
-            else
-            {
-                // We've processed all tree for one crossword word
-                return 0;
-            }
+            // If we created a new child go to it
+            main_node = schild;
         }
         else
         {
-            // We've processed all tree for one crossword word
-            return 0;
+            // Is the current node - leaf node?
+            if (!main_node->firstchild)
+            {
+                // If it's the first finished branch it's the best branch
+                if (!best_branch)
+                {
+                    best_branch = main_node;
+                    if (main_node->parent)
+                    {
+                        main_node = main_node->parent;
+                    }
+                    else
+                    {
+                        // We climbed up to 'main pairs'. No need to check
+                        // brother for NULL.
+                        main_node = main_node->brother;
+                    }
+                }
+                else
+                {
+                    // If the best branch already exists...
+                    if (main_node->depth > best_branch->depth)
+                    {
+                        // We found new best branch - should remove old one and
+                        // free memory of all nodes below the 'common_parent'
+                        // if any
+                        for (cur_node = best_branch; cur_node != common_parent && cur_node->parent; )
+                        {
+                            tmp_node = cur_node;
+                            // If current node has a brother, now it becomes
+                            // the elderst
+                            if (cur_node->brother)
+                            {
+                                cur_node->parent->firstchild = cur_node->brother;
+                            }
+                            else
+                            {
+                                cur_node->parent->firstchild = NULL;
+                            }
+                            cur_node = cur_node->parent;
+
+                            if (tmp_node->available_first_children)
+                                free(tmp_node->available_first_children);
+                            free(tmp_node);
+                        }
+                        common_parent = NULL;
+                        best_branch = main_node;
+
+                        if (main_node->parent)
+                        {
+                            main_node = main_node->parent;
+                        }
+                        else
+                        {
+                            // We climbed up to 'main pairs'. No need to check
+                            // brother for NULL.
+                            main_node = main_node->brother;
+                        }
+                    }
+                    else
+                    {
+                        // Current 'main_node' branch is not better than the
+                        // 'best_branch'. Remove current node and move to its
+                        // parent.
+                        if (main_node->parent)
+                        {
+                            cur_node = main_node;
+                            main_node = main_node->parent;
+                            if (cur_node->parent->firstchild == cur_node)
+                            {
+                                cur_node->parent->firstchild = NULL;
+                            }
+                            else
+                            {
+                                cur_node->parent->firstchild->brother = NULL;
+                            }
+                            if (cur_node->available_first_children)
+                                free(cur_node->available_first_children);
+                            free(cur_node);
+                        }
+                        else
+                        {
+                            // We climbed up to 'main pairs'. No need to check
+                            // brother for NULL.
+                            main_node = main_node->brother;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                // The current 'main_node' is not the leaf node and has no
+                // other children - it means that it is one of the parents of
+                // the best_branch node
+                if (main_node->parent)
+                {
+                    main_node = main_node->parent;
+                }
+                else
+                {
+                    // We climbed up to 'main pairs'. No need to check
+                    // brother for NULL.
+                    main_node = main_node->brother;
+                }
+            }
         }
     }
+
+    if (cur_available_first_children)
+        free(cur_available_first_children);
+
     // This code is reached only when all pairs for the word have been
     // processed
     return 0;
@@ -654,7 +744,11 @@ int main(int argc, char **argv)
     }
 
     // Read input words to the words[] array
-    fwords = fopen(argv[1], "r");
+    if (NULL == (fwords = fopen(argv[1], "r")))
+    {
+        fprintf(stderr, "Can't open the file \"%s\"!\n", argv[1]);
+        return 1;
+    }
     for (i = 0; NULL != fgets(words[i].word, MAXWORDLEN, fwords) && i < MAXWORDS; i++)
     {
         // Remove newline symbol
@@ -669,11 +763,13 @@ int main(int argc, char **argv)
     // Build inital word pairs that we'll be using a lot later
     if (build_pairs(wordnum))
     {
-        fprintf(stderr, "Error building pairs between words\n");
+        fprintf(stderr, "Error building pairs of words.\n");
         return 1;
     }
-    // Fill the tree with all possible pairs. Scan all the words.
-    for (i = 0; i < wordnum; i++)
+    // Fill the tree with all possible pairs.
+    // In fact usually it's enough to scan only 1/3 of the total number of
+    // words.
+    for (i = 0; i < wordnum / 3; i++)
         build_branch(wordnum, words[i].firstchild);
 
 #ifdef DEBUG
