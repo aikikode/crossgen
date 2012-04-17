@@ -17,12 +17,22 @@
  * this program; if not, see <http://www.gnu.org/licenses>.
  */
 
+// Timer requires:
+#include <time.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 
-#define MAXWORDS    10    // maximum number of words to create a crossword from
+// Custom signal handler requires:
+#include <signal.h>
+
+// kill() function requires:
+#include <sys/types.h>
+#include <unistd.h>
+
+#define MAXWORDS    100   // maximum number of words to create a crossword from
 #define MAXWORDLEN  15
 
 #define MINDISTANCE 2     /* minimum distance between the crossing words, e.g.
@@ -63,11 +73,31 @@ struct cross_elem words[MAXWORDS];
 struct strie_pair *best_branch = NULL;
 struct strie_pair *common_parent = NULL;
 
-int build_branch(const short wordnum, struct strie_pair *node);
+int build_branch(const short wordnum, struct strie_pair *node, int limit);
 struct strie_pair *check_pair(struct strie_pair *main_node, struct strie_pair *check_node);
 int print_strie(struct strie_pair *node);
 int print_branch(struct strie_pair *node);
 int clear_branch(struct strie_pair *node);
+
+enum error_codes {
+    BUILD_OK = 0,
+    BUILD_FINISHED
+};
+
+int sigint_called = 0;
+
+void sig_handler(int signo)
+{
+    if (signo == SIGINT)
+    {
+        sigint_called++;
+        // Print the best branch if any
+        print_branch(best_branch);
+        printf("Hit Ctrl-C again to exit the program\n");
+        if (sigint_called > 1)
+            kill(getpid(), SIGKILL);
+    }
+}
 
 int add_child(struct cross_elem *word, struct strie_pair *new_child)
 {
@@ -142,6 +172,8 @@ int build_pairs(short wordnum)
                         schild->parent     = NULL;
                         schild->available_first_children = (short *)calloc(wordnum, sizeof(short));
                         schild->available_first_children[l] = words[l].childnum;
+                        if (l == i)
+                            schild->available_first_children[j] = words[j].childnum + 1;
 
                         // Add allocated child to the parent
                         add_child(&words[l], schild);
@@ -158,7 +190,7 @@ int build_pairs(short wordnum)
 /* Its goal is to add all children to the current node, move the current node
  * pointer and recursively continue
  */
-int build_branch(const short wordnum, struct strie_pair *main_node)
+int build_branch(const short wordnum, struct strie_pair *main_node, int limit)
 {
     int j;
     short  cur_word_num, checking_word_num;
@@ -184,14 +216,19 @@ int build_branch(const short wordnum, struct strie_pair *main_node)
             {
                 // The global index of the word to check
                 checking_word_num = cur_node->crossed_word[cur_word_num];
+
                 // We shouldn't allow to search previous words for pairs
                 if (checking_word_num < cur_node->procreator)
                     break;
 
+                // Skip this word if we've already processed all its children
+                if (cur_available_first_children[checking_word_num] == words[checking_word_num].childnum)
+                    continue;
+
                 // We have nothing to check if the current word doesn't have
                 // any children
                 if (!(tmp_node = words[checking_word_num].firstchild))
-                    break;
+                    continue;
 
                 // Get to the first child we can start iterate from
                 for (j = 0; j < cur_available_first_children[checking_word_num]; j++)
@@ -246,6 +283,18 @@ int build_branch(const short wordnum, struct strie_pair *main_node)
                 if (!best_branch)
                 {
                     best_branch = main_node;
+                    sigint_called = 0;
+                    if (limit)
+                    {
+                        if (best_branch->depth >= limit)
+                        {
+                            if (cur_available_first_children)
+                                free(cur_available_first_children);
+                            return BUILD_FINISHED;
+                        }
+                    }
+                    printf("\nGenerated crossword with %d crossings. Hit Ctrl-C to view it.\n", best_branch->depth + 1);
+
                     if (main_node->parent)
                     {
                         main_node = main_node->parent;
@@ -286,6 +335,17 @@ int build_branch(const short wordnum, struct strie_pair *main_node)
                         }
                         common_parent = NULL;
                         best_branch = main_node;
+                        sigint_called = 0;
+                        if (limit)
+                        {
+                            if (best_branch->depth >= limit)
+                            {
+                                if (cur_available_first_children)
+                                    free(cur_available_first_children);
+                                return BUILD_FINISHED;
+                            }
+                        }
+                        printf("Generated crossword with %d crossings. Hit Ctrl-C to view it.\n", best_branch->depth + 1);
 
                         if (main_node->parent)
                         {
@@ -352,7 +412,7 @@ int build_branch(const short wordnum, struct strie_pair *main_node)
 
     // This code is reached only when all pairs for the word have been
     // processed
-    return 0;
+    return BUILD_OK;
 }
 
 struct strie_pair *check_pair(struct strie_pair *main_node, struct strie_pair *check_node)
@@ -652,7 +712,7 @@ int print_branch(struct strie_pair *node)
     if (!node)
         return 0;
 
-    printf("\nGenerated crossword puzzle:\n--------------------------------\n");
+    printf("\nGenerated crossword puzzle with %d crossings:\n----------------------------------------------\n", cur_node->depth + 1);
     while (cur_node)
     {
         // Mark intersection letters uppercase
@@ -689,6 +749,7 @@ int print_branch(struct strie_pair *node)
 
         cur_node = cur_node->parent;
     }
+    printf("----------------------------------------------\n");
     return 0;
 }
 
@@ -728,17 +789,34 @@ int clear_branch(struct strie_pair *node)
     return 0;
 }
 
+clock_t begin_timer()
+{
+    clock_t start_time = clock();
+    return start_time;
+}
+
+float stop_timer(clock_t start_time)
+{
+    clock_t end_time = clock();
+    float delta = (float)(end_time - start_time) / CLOCKS_PER_SEC;
+    return delta;
+}
+
 int main(int argc, char **argv)
 {
     int i, j, wordnum = 0;
+    int limit = 0;
     FILE *fwords = NULL;
+
+    if (signal(SIGINT, sig_handler) == SIG_ERR)
+        fprintf(stderr, "Couldn't catch SIGINT\n");
 
     printf("Welcome to Crossword Generator v0.1\n");
     printf("===================================\n");
 
-    if (2 != argc)
+    if (2 > argc)
     {
-        printf("Usage: %s <file with a list of words>\n", argv[0]);
+        printf("Usage: %s <file with a list of words> [number of crossings to stop]\n", argv[0]);
         printf("\nMax words: %d\nMax wordlen: %d\n", MAXWORDS, MAXWORDLEN);
         return 1;
     }
@@ -760,17 +838,40 @@ int main(int argc, char **argv)
     }
     wordnum = i;
 
+    // Set limit
+    if (2 < argc)
+    {
+        limit = atoi(argv[2]);
+        if (1 == limit)
+            limit--;
+        limit--;
+    }
+
+    if (limit > 0)
+    {
+        printf("\nCrossword generation will be stopped when the one is created with at least %d crossings.\n", limit + 1);
+    }
+    else if (limit < 0)
+    {
+        printf("\nCrossword generation will be stopped when any finished chain of words is found.\n");
+    }
+
     // Build inital word pairs that we'll be using a lot later
     if (build_pairs(wordnum))
     {
         fprintf(stderr, "Error building pairs of words.\n");
         return 1;
     }
+
     // Fill the tree with all possible pairs.
     // In fact usually it's enough to scan only 1/3 of the total number of
     // words.
-    for (i = 0; i < wordnum / 3; i++)
-        build_branch(wordnum, words[i].firstchild);
+    for (i = 0; i < wordnum; i++)
+    {
+        int ret;
+        if (BUILD_FINISHED == (ret = build_branch(wordnum, words[i].firstchild, limit)))
+            break;
+    }
 
 #ifdef DEBUG
     for (i = 0; i < wordnum; i++)
